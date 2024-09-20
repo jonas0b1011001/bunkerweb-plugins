@@ -2,7 +2,7 @@
   "id": "webhook",
   "name": "WebHook",
   "description": "Send alerts to a custom webhook.",
-  "version": "1.6",
+  "version": "1.7",
   "stream": "yes",
   "settings": {
     "USE_WEBHOOK": {
@@ -31,6 +31,33 @@
       "label": "Retry if limited by webhook",
       "regex": "^(yes|no)$",
       "type": "check"
+    },
+    "ANONYMIZE_IP": {
+      "context": "multisite",
+      "default": "no",
+      "help": "Mask the IP address in notifications.",
+      "id": "anonymize-ip",
+      "label": "Anonymize IP",
+      "regex": "^(yes|no)$",
+      "type": "check"
+    },
+    "INCLUDE_HEADERS": {
+      "context": "multisite",
+      "default": "yes",
+      "help": "Include request headers in notifications.",
+      "id": "include-headers",
+      "label": "Include Headers",
+      "regex": "^(yes|no)$",
+      "type": "check"
+    },
+    "MESSAGE_KEY": {
+      "context": "multisite",
+      "default": "content",
+      "help": "Specify the key for the message (e.g., content, html).",
+      "id": "message-key",
+      "label": "Message Key",
+      "regex": "^.*$",
+      "type": "text"
     }
   }
 }

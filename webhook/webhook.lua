@@ -19,6 +19,8 @@ local http_new = http.new
 local has_variable = utils.has_variable
 local get_variable = utils.get_variable
 local get_reason = utils.get_reason
+local get_country = utils.get_country
+local get_asn = utils.get_asn
 local tostring = tostring
 local encode = cjson.encode
 
@@ -40,30 +42,50 @@ function webhook:log(bypass_use_webhook)
 		return self:ret(true, "request not denied")
 	end
 	-- Compute data
+	local request_time = ngx.var.time_iso8601
+	local request_host = ngx.var.host or "unknown host"
+	local remote_addr = self.ctx.bw.remote_addr
+        local request_method = self.ctx.bw.request_method
+        local country, err = get_country(self.ctx.bw.remote_addr)
+        if not country then
+            elf.logger:log(ERR, "can't get Country of IP " .. remote_addr .. " : " .. err)
+            country = "Country unknown"
+        else
+            country = "Country " .. tostring(country)
+        end
+        local asn, err = get_asn(remote_addr)
+        if not asn then
+            self.logger:log(ERR, "can't get ASN of IP " .. remote_addr .. " : " .. err)
+            asn = "ASN unknown"
+        else
+            asn = "ASN " .. tostring(asn)
+        end
 	local data = {}
-	data.content = "```Denied request for IP "
-		.. self.ctx.bw.remote_addr
-		.. " (reason = "
-		.. reason
-		.. " / reason data = "
-		.. encode(reason_data or {})
-		.. ").\n\nRequest data :\n\n"
-		.. ngx.var.request
-		.. "\n"
-	local headers, err = ngx_req.get_headers()
-	if not headers then
-		data.content = data.content .. "error while getting headers : " .. err
-	else
-		for header, value in pairs(headers) do
-			data.content = data.content .. header .. ": " .. value .. "\n"
+	local message_key = self.variables["MESSAGE_KEY"] or "content"
+        data[message_key] = request_time .. ":<br>"
+	data[message_key] = data[message_key] .. "Denied " .. request_method .. " from <b>" .. remote_addr .. "</b> (" .. country .. " | " .. asn .. ") to " .. request_host .. self.ctx.bw.uri .. "<br>"
+	data[message_key] = data[message_key] .. "Reason " .. reason .. " (" .. encode(reason_data or {}) .. ").<br>"
+        -- Add headers if enabled
+	if self.variables["INCLUDE_HEADERS"] == "yes" then
+                data[message_key] = data[message_key] .. "<br>"
+		local headers, err = ngx_req.get_headers()
+		if not headers then
+			data[message_key] = data[message_key] .. "error while getting headers: " .. err .. "<br>"
+		else
+			for header, value in pairs(headers) do
+				data[message_key] = data[message_key] .. header .. ": " .. value .. "<br>"
+			end
 		end
 	end
-	data.content = data.content .. "```"
-	-- Send request
-	local hdr
-	hdr, err = ngx_timer.at(0, self.send, self, data)
+	-- Anonymize IP if enabled
+	if self.variables["ANONYMIZE_IP"] == "yes" then
+		remote_addr = string.gsub(remote_addr, "%d+%.%d+$", "xxx.xxx")
+		data[message_key] = string.gsub(data[message_key], self.ctx.bw.remote_addr, remote_addr)
+	end
+	-- Send request via webhook
+	local hdr, err = ngx_timer.at(0, self.send, self, data)
 	if not hdr then
-		return self:ret(true, "can't create report timer : " .. err)
+		return self:ret(true, "can't create report timer: " .. err)
 	end
 	return self:ret(true, "scheduled timer")
 end
@@ -135,9 +157,9 @@ function webhook:api()
 		end
 
 		-- Send test data to webhook webhook
-		local data = {
-			content = "```Test message from bunkerweb```",
-		}
+		local data = {}
+		local message_key = self.variables["MESSAGE_KEY"] or "content"
+		data[message_key] = "```Test message from bunkerweb```"
 		-- Send request
 		local httpc
 		httpc, err = http_new()
